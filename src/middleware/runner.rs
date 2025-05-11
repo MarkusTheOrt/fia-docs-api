@@ -222,11 +222,13 @@ async fn runner_internal(
             let (file, body) = download_file(&url, &format!("doc_{i}")).await?;
             let mirror = upload_mirror(&title, &real_event.title, year, &body).await?;
             let inserted_doc_id =
-                insert_document(db_conn, real_event.id as i64, title, &url, &mirror).await?;
+                insert_document(db_conn, real_event.id as i64, title.clone(), &url, &mirror)
+                    .await?;
 
             cache.documents.push(Document {
-                id: inserted_doc_id as u64,
-                event_id: real_event.id,
+                id: inserted_doc_id,
+                event_id: real_event.id as i64,
+                title,
                 href: url,
                 mirror,
                 status: f1_bot_types::DocumentStatus::Initial,
