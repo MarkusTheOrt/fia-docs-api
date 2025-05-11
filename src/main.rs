@@ -1,4 +1,11 @@
-use std::{error::Error, sync::{atomic::{AtomicBool, Ordering}, Arc}, time::{Duration, Instant}};
+use std::{
+    error::Error,
+    sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+    },
+    time::{Duration, Instant},
+};
 
 use middleware::magick::check_magick;
 use tracing::{error, info};
@@ -38,20 +45,19 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     let should_stop = Arc::new(AtomicBool::new(false));
     let st1 = should_stop.clone();
-    
+
     tokio::spawn(async move {
         tokio::signal::ctrl_c().await.unwrap();
         info!("Shutting down.");
         st1.store(true, Ordering::Relaxed);
     });
-    
+
     loop {
         let db_conn = database.connect()?;
         let start = Instant::now();
         if should_stop.load(Ordering::Relaxed) {
             break;
         }
-
 
         let runner = runner(&db_conn, should_stop.clone());
         if let Err(why) = runner.await {
@@ -67,7 +73,6 @@ async fn main() -> Result<(), Box<dyn Error>> {
         )
         .await;
     }
-
 
     Ok(())
 }

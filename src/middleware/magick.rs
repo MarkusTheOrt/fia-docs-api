@@ -22,31 +22,27 @@ pub fn check_magick() -> bool {
             if output.status.success() {
                 return true;
             }
-        },
+        }
         _ => return false,
     }
     false
 }
 
-pub async fn run_magick(
-    input: Cow<'_, str>,
-    output: &str,
-) -> crate::error::Result<Vec<PathBuf>> {
-    
+pub async fn run_magick(input: Cow<'_, str>, output: &str) -> crate::error::Result<Vec<PathBuf>> {
     let i1 = input.to_string();
     let o1 = output.to_owned();
     let cmd = tokio::task::spawn_blocking(move || {
-
-    create_doc_dir(&o1)?;
-    std::process::Command::new("magick")
-        .args(["-density", "400"])
-        .arg(format!("{i1}[0-100]"))
-        .args(["-alpha", "remove"])
-        .args(["-quality", "95"])
-        .arg(format!("./tmp/{o1}/0.jpg"))
-        .stdout(Stdio::null())
-        .output()
-    }).await??;
+        create_doc_dir(&o1)?;
+        std::process::Command::new("magick")
+            .args(["-density", "400"])
+            .arg(format!("{i1}[0-100]"))
+            .args(["-alpha", "remove"])
+            .args(["-quality", "95"])
+            .arg(format!("./tmp/{o1}/0.jpg"))
+            .stdout(Stdio::null())
+            .output()
+    })
+    .await??;
 
     if !cmd.status.success() {
         unsafe {
@@ -55,7 +51,7 @@ pub async fn run_magick(
             )));
         }
     }
-    
+
     Ok(get_converted_files(output))
 }
 
@@ -66,8 +62,7 @@ pub fn get_converted_files(input: &str) -> Vec<PathBuf> {
         output.push(initial);
     }
     for i in 0..=100 {
-        let path = match PathBuf::from_str(&format!("./tmp/{input}/0-{i}.jpg"))
-        {
+        let path = match PathBuf::from_str(&format!("./tmp/{input}/0-{i}.jpg")) {
             Err(_) => continue,
             Ok(path) => path,
         };

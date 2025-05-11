@@ -6,13 +6,20 @@ use aws_sign_v4::AwsSign;
 use chrono::{DateTime, Datelike, Utc};
 use f1_bot_types::{Document, DocumentStatus, Event, EventStatus, Series};
 use html5ever::{
-    tendril::{fmt::Slice, ByteTendril, ReadExt},
+    tendril::{ByteTendril, ReadExt, fmt::Slice},
     tokenizer::{BufferQueue, Tokenizer, TokenizerOpts},
 };
-use libsql::{params, Connection};
+use libsql::{Connection, params};
 use reqwest::header::{AUTHORIZATION, CONTENT_TYPE};
 use std::{
-    cell::RefCell, fs::File, path::PathBuf, str::FromStr, sync::{atomic::{AtomicBool, Ordering}, Arc}
+    cell::RefCell,
+    fs::File,
+    path::PathBuf,
+    str::FromStr,
+    sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+    },
 };
 use std::{
     io::{Read, Write},
@@ -20,9 +27,10 @@ use std::{
 };
 use tracing::info;
 
-const F1_DOCS_URL:&str = "https://www.fia.com/documents/championships/fia-formula-one-world-championship-14/season/season-2025-2071";
-const F2_DOCS_URL:&str = "https://www.fia.com/documents/season/season-2025-2071/championships/formula-2-championship-44";
-const F3_DOCS_URL:&str = "https://www.fia.com/documents/season/season-2025-2071/championships/fia-formula-3-championship-1012";
+const F1_DOCS_URL: &str = "https://www.fia.com/documents/championships/fia-formula-one-world-championship-14/season/season-2025-2071";
+const F2_DOCS_URL: &str =
+    "https://www.fia.com/documents/season/season-2025-2071/championships/formula-2-championship-44";
+const F3_DOCS_URL: &str = "https://www.fia.com/documents/season/season-2025-2071/championships/fia-formula-3-championship-1012";
 
 struct LocalCache {
     pub documents: Vec<Document>,
@@ -53,7 +61,6 @@ async fn populate_cache(
         cache.events.push(libsql::de::from_row(&event)?);
     }
 
-
     let delta = Utc::now() - cache.last_populated;
     // lets revalidate the cache once a day.
     if delta.num_days() < 1 {
@@ -74,10 +81,7 @@ async fn populate_cache(
     Ok(())
 }
 
-pub async fn runner(db_conn: &Connection,
-
-    should_stop: Arc<AtomicBool>
-) -> crate::error::Result {
+pub async fn runner(db_conn: &Connection, should_stop: Arc<AtomicBool>) -> crate::error::Result {
     let mut local_cache = LocalCache::default();
 
     tokio::task::yield_now().await;
@@ -93,8 +97,15 @@ pub async fn runner(db_conn: &Connection,
             Series::F3 => F3_DOCS_URL,
             _ => panic!("F1A Not Supported"),
         };
-        runner_internal(db_conn, year, docs_url, series, &mut local_cache, should_stop.clone())
-            .await?;
+        runner_internal(
+            db_conn,
+            year,
+            docs_url,
+            series,
+            &mut local_cache,
+            should_stop.clone(),
+        )
+        .await?;
     }
 
     Ok(())
@@ -108,8 +119,12 @@ async fn create_new_event(
 ) -> crate::error::Result<Event> {
     info!("Running 1");
     let event_title = event.title.as_ref().cloned().unwrap();
-    db_conn.execute("INSERT INTO events (title, year, series, status) VALUES (?, ?, ?, ?)", 
-        params![event_title.clone(), year, series, EventStatus::NotAllowed]).await?;
+    db_conn
+        .execute(
+            "INSERT INTO events (title, year, series, status) VALUES (?, ?, ?, ?)",
+            params![event_title.clone(), year, series, EventStatus::NotAllowed],
+        )
+        .await?;
     info!("inserted event \"{event_title}\"");
     Ok(Event {
         id: db_conn.last_insert_rowid() as u64,
@@ -139,10 +154,7 @@ async fn insert_document(
     Ok(db_conn.last_insert_rowid())
 }
 
-async fn upload_image(
-    data: Vec<u8>,
-    url: &String,
-) -> crate::error::Result<()> {
+async fn upload_image(data: Vec<u8>, url: &String) -> crate::error::Result<()> {
     let data_digest = sha256::digest(data.as_slice());
     let now = Utc::now();
     let mut headers = reqwest::header::HeaderMap::new();
@@ -180,10 +192,10 @@ async fn runner_internal(
     url: &str,
     series: Series,
     cache: &mut LocalCache,
-    should_stop: Arc<AtomicBool>
+    should_stop: Arc<AtomicBool>,
 ) -> crate::error::Result {
     let season = get_season(url, year).await?;
-    
+
     for ev in season.events.into_iter() {
         if should_stop.load(Ordering::Relaxed) {
             break;
@@ -202,23 +214,15 @@ async fn runner_internal(
             if should_stop.load(Ordering::Relaxed) {
                 break;
             }
-            let (title, url) =
-                (doc.title.take().unwrap(), doc.url.take().unwrap());
+            let (title, url) = (doc.title.take().unwrap(), doc.url.take().unwrap());
             if cache.documents.iter().any(|f| f.href == url) {
                 continue;
             }
 
             let (file, body) = download_file(&url, &format!("doc_{i}")).await?;
-            let mirror =
-                upload_mirror(&title, &real_event.title, year, &body).await?;
-            let inserted_doc_id = insert_document(
-                db_conn,
-                real_event.id as i64,
-                title,
-                &url,
-                &mirror,
-            )
-            .await?;
+            let mirror = upload_mirror(&title, &real_event.title, year, &body).await?;
+            let inserted_doc_id =
+                insert_document(db_conn, real_event.id as i64, title, &url, &mirror).await?;
 
             cache.documents.push(Document {
                 id: inserted_doc_id as u64,
@@ -229,8 +233,7 @@ async fn runner_internal(
                 created_at: Utc::now(),
             });
 
-            let files =
-                run_magick(file.to_string_lossy(), &format!("doc_{i}")).await?;
+            let files = run_magick(file.to_string_lossy(), &format!("doc_{i}")).await?;
 
             // run_magick takes some time to complete, hence we yield here!
             tokio::task::yield_now().await;
@@ -249,8 +252,7 @@ async fn runner_internal(
 
                 upload_image(buf, &url).await?;
 
-                insert_image(db_conn, inserted_doc_id, page_number, url)
-                    .await?;
+                insert_image(db_conn, inserted_doc_id, page_number, url).await?;
             }
             mark_doc_done(inserted_doc_id, db_conn).await?;
         }
@@ -259,10 +261,7 @@ async fn runner_internal(
     Ok(())
 }
 
-async fn mark_doc_done(
-    doc_id: i64,
-    db_conn: &Connection,
-) -> crate::error::Result {
+async fn mark_doc_done(doc_id: i64, db_conn: &Connection) -> crate::error::Result {
     db_conn
         .execute(
             "UPDATE documents SET status = ? WHERE id = ?",
@@ -336,10 +335,7 @@ async fn upload_mirror(
     Ok(url)
 }
 
-async fn download_file(
-    url: &str,
-    name: &str,
-) -> crate::error::Result<(PathBuf, Vec<u8>)> {
+async fn download_file(url: &str, name: &str) -> crate::error::Result<(PathBuf, Vec<u8>)> {
     let request = reqwest::get(url).await?;
     let mut file = File::create(format!("./tmp/{name}.pdf"))?;
     let body = request.bytes().await?;
@@ -351,10 +347,7 @@ async fn download_file(
     Ok((path, body.to_vec()))
 }
 
-async fn get_season(
-    url: &str,
-    year: i32,
-) -> crate::error::Result<super::parser::Season> {
+async fn get_season(url: &str, year: i32) -> crate::error::Result<super::parser::Season> {
     let request = reqwest::get(url).await?;
     let bytes = request.bytes().await?;
     let mut tendril = ByteTendril::new();

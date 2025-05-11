@@ -1,7 +1,10 @@
 use std::process::Command;
 
 pub fn main() {
-    println!("Pushing: \n- codeberg.org/mto/fia-docs-scraper:latest\n- codeberg.org/mto/fia-docs-scraper:{}", env!("CARGO_PKG_VERSION"));
+    println!(
+        "Pushing: \n- codeberg.org/mto/fia-docs-scraper:latest\n- codeberg.org/mto/fia-docs-scraper:{}",
+        env!("CARGO_PKG_VERSION")
+    );
 
     let status = Command::new("docker")
         .args(["push", "codeberg.org/mto/fia-docs-scraper:latest"])
