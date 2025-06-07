@@ -26,13 +26,14 @@ use std::{
     io::{Read, Write},
     time::UNIX_EPOCH,
 };
-use tracing::info;
+use tracing::{info, instrument};
 
 const F1_DOCS_URL: &str = "https://www.fia.com/documents/championships/fia-formula-one-world-championship-14/season/season-2025-2071";
 const F2_DOCS_URL: &str =
     "https://www.fia.com/documents/season/season-2025-2071/championships/formula-2-championship-44";
 const F3_DOCS_URL: &str = "https://www.fia.com/documents/season/season-2025-2071/championships/fia-formula-3-championship-1012";
 
+#[derive(Debug)]
 struct LocalCache {
     pub documents: Vec<Document>,
     pub events: Vec<Event>,
@@ -49,6 +50,7 @@ impl Default for LocalCache {
     }
 }
 
+#[instrument]
 async fn populate_cache(
     db_conn: &Connection,
     cache: &mut LocalCache,
@@ -88,6 +90,7 @@ async fn populate_cache(
     Ok(())
 }
 
+#[instrument]
 pub async fn runner(db_conn: &Connection, should_stop: Arc<AtomicBool>) -> crate::error::Result {
     let mut local_cache = LocalCache::default();
 
@@ -166,6 +169,7 @@ async fn insert_document(
     Ok(db_conn.last_insert_rowid())
 }
 
+#[instrument]
 async fn upload_image(data: Vec<u8>, url: &String) -> crate::error::Result<()> {
     let data_digest = sha256::digest(data.as_slice());
     let now = Utc::now();
@@ -198,6 +202,7 @@ async fn upload_image(data: Vec<u8>, url: &String) -> crate::error::Result<()> {
     Ok(())
 }
 
+#[instrument]
 async fn runner_internal(
     db_conn: &Connection,
     year: i32,
