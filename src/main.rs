@@ -20,6 +20,17 @@ mod middleware;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
+    drop(dotenvy::dotenv());
+
+    let _guard = sentry::init((
+        std::env::var("SENTRY_DSN")?,
+        sentry::ClientOptions {
+            release: sentry::release_name!(),
+            sample_rate: 1.0,
+            ..Default::default()
+        },
+    ));
+
     tracing_subscriber::fmt::init();
 
     if !check_magick() {
@@ -33,8 +44,6 @@ async fn main() -> Result<(), Box<dyn Error>> {
         error!("Couldn't create tmp dir: {why}");
         std::process::exit(1);
     }
-
-    drop(dotenvy::dotenv());
 
     let database = libsql::Builder::new_remote(
         std::env::var("DATABASE_URL").expect("Database URL not set"),
