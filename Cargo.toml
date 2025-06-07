@@ -1,6 +1,6 @@
 [package]
 name = "fia-docs-api"
-version = "1.0.0"
+version = "1.1.0"
 edition = "2024"
 default-run = "fia-docs-api"
 
