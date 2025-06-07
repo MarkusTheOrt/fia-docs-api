@@ -30,7 +30,7 @@ f1-bot-types = { git = "https://codeberg.org/MTO/f1-bot-types", version = "0.1.0
 html5ever = "0.31.0"
 libsql = "0.9.9"
 reqwest = "0.12.19"
-sentry = "0.38.1"
+sentry = { version = "0.38.1", features = ["tracing"] }
 serde = { version = "1.0.219", features = ["derive"] }
 sha256 = "1.6.0"
 tokio = { version = "1.45.1", features = ["full"] }
