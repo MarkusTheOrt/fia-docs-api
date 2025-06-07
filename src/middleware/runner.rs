@@ -11,6 +11,7 @@ use html5ever::{
 };
 use libsql::{Connection, params};
 use reqwest::header::{AUTHORIZATION, CONTENT_TYPE};
+use sentry::{Breadcrumb, Hub, SentryFutureExt, TransactionContext};
 use std::{
     cell::RefCell,
     fs::File,
@@ -28,8 +29,12 @@ use std::{
 use tracing::info;
 
 const F1_DOCS_URL: &str = "https://www.fia.com/documents/championships/fia-formula-one-world-championship-14/season/season-2025-2071";
+<<<<<<< HEAD
 const F2_DOCS_URL: &str =
     "https://www.fia.com/documents/season/season-2025-2071/championships/formula-2-championship-44";
+=======
+const F2_DOCS_URL: &str = "https://www.fia.com/documents/season/season-2025-2071/championships/formula-2-championship-44";
+>>>>>>> 0e5c14c (add sentry integration)
 const F3_DOCS_URL: &str = "https://www.fia.com/documents/season/season-2025-2071/championships/fia-formula-3-championship-1012";
 
 struct LocalCache {
@@ -54,6 +59,13 @@ async fn populate_cache(
     year: i32,
 ) -> crate::error::Result {
     cache.events.clear();
+    cache.documents.clear();
+
+    sentry::add_breadcrumb(Breadcrumb {
+        message: Some("Populating Cache".to_owned()),
+        ..Default::default()
+    });
+
     let mut events = db_conn
         .query("SELECT * FROM events WHERE year = ?", params![year])
         .await?;
@@ -72,7 +84,6 @@ async fn populate_cache(
             params![year.to_string()],
         )
         .await?;
-    cache.documents.clear();
     while let Ok(Some(doc)) = docs.next().await {
         cache.documents.push(libsql::de::from_row(&doc)?);
     }
@@ -81,7 +92,14 @@ async fn populate_cache(
     Ok(())
 }
 
+<<<<<<< HEAD
 pub async fn runner(db_conn: &Connection, should_stop: Arc<AtomicBool>) -> crate::error::Result {
+=======
+pub async fn runner(
+    db_conn: &Connection,
+    should_stop: Arc<AtomicBool>,
+) -> crate::error::Result {
+>>>>>>> 0e5c14c (add sentry integration)
     let mut local_cache = LocalCache::default();
 
     tokio::task::yield_now().await;
@@ -91,6 +109,10 @@ pub async fn runner(db_conn: &Connection, should_stop: Arc<AtomicBool>) -> crate
 
     for i in Series::F1.i8()..=Series::F3.i8() {
         let series = Series::from(i);
+        sentry::add_breadcrumb(Breadcrumb {
+            message: Some(series.into()),
+            ..Default::default()
+        });
         let docs_url = match series {
             Series::F1 => F1_DOCS_URL,
             Series::F2 => F2_DOCS_URL,
@@ -105,6 +127,10 @@ pub async fn runner(db_conn: &Connection, should_stop: Arc<AtomicBool>) -> crate
             &mut local_cache,
             should_stop.clone(),
         )
+<<<<<<< HEAD
+=======
+        .bind_hub(Hub::current())
+>>>>>>> 0e5c14c (add sentry integration)
         .await?;
     }
 
@@ -195,11 +221,20 @@ async fn runner_internal(
     should_stop: Arc<AtomicBool>,
 ) -> crate::error::Result {
     let season = get_season(url, year).await?;
+<<<<<<< HEAD
 
+=======
+    sentry::configure_scope(|f| f.set_tag("Year", season.year));
+>>>>>>> 0e5c14c (add sentry integration)
     for ev in season.events.into_iter() {
         if should_stop.load(Ordering::Relaxed) {
             break;
         }
+
+        let tx = sentry::start_transaction(TransactionContext::new("event-parsing", "parser"));
+        sentry::configure_scope(|f| {
+            f.set_tag("Event", ev.title.as_ref().cloned().unwrap_or_default());
+        });
         let cache_event = cache.events.iter().find(|f| {
             ev.title.as_ref().is_some_and(|t| *t == f.title)
                 && ev.season.is_some_and(|s| s == year)
@@ -211,14 +246,26 @@ async fn runner_internal(
         };
 
         for (i, mut doc) in ev.documents.into_iter().enumerate() {
+            
             if should_stop.load(Ordering::Relaxed) {
                 break;
             }
+<<<<<<< HEAD
             let (title, url) = (doc.title.take().unwrap(), doc.url.take().unwrap());
+=======
+
+            let tx = sentry::start_transaction(TransactionContext::new("document-parsing", "parser"));
+            let (title, url) =
+                (doc.title.take().unwrap(), doc.url.take().unwrap());
+            sentry::configure_scope(|f| {
+                f.set_tag("Document", &title);
+            });
+>>>>>>> 0e5c14c (add sentry integration)
             if cache.documents.iter().any(|f| f.href == url) {
                 continue;
             }
 
+<<<<<<< HEAD
             let (file, body) = download_file(&url, &format!("doc_{i}")).await?;
             let mirror = upload_mirror(&title, &real_event.title, year, &body).await?;
             let inserted_doc_id =
@@ -229,13 +276,40 @@ async fn runner_internal(
                 id: inserted_doc_id,
                 event_id: real_event.id as i64,
                 title,
+=======
+            let (file, body) = download_file(&url, &format!("doc_{i}"))
+                .bind_hub(Hub::current())
+                .await?;
+            let mirror = upload_mirror(&title, &real_event.title, year, &body)
+                .bind_hub(Hub::current())
+                .await?;
+            let inserted_doc_id = insert_document(
+                db_conn,
+                real_event.id as i64,
+                title.clone(),
+                &url,
+                &mirror,
+            )
+            .await?;
+
+            cache.documents.push(Document {
+                title,
+                id: inserted_doc_id,
+                event_id: real_event.id as i64,
+>>>>>>> 0e5c14c (add sentry integration)
                 href: url,
                 mirror,
                 status: f1_bot_types::DocumentStatus::Initial,
                 created_at: Utc::now(),
             });
+<<<<<<< HEAD
 
             let files = run_magick(file.to_string_lossy(), &format!("doc_{i}")).await?;
+=======
+            
+            let files =
+                run_magick(file.to_string_lossy(), &format!("doc_{i}")).bind_hub(Hub::current()).await?;
+>>>>>>> 0e5c14c (add sentry integration)
 
             // run_magick takes some time to complete, hence we yield here!
             tokio::task::yield_now().await;
@@ -257,7 +331,11 @@ async fn runner_internal(
                 insert_image(db_conn, inserted_doc_id, page_number, url).await?;
             }
             mark_doc_done(inserted_doc_id, db_conn).await?;
+            tx.set_status(sentry::protocol::SpanStatus::Ok);
+            tx.finish();
         }
+        tx.set_status(sentry::protocol::SpanStatus::Ok);
+        tx.finish();
         clear_tmp_dir()?;
     }
     Ok(())

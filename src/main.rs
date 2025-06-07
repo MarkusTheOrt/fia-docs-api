@@ -8,6 +8,7 @@ use std::{
 };
 
 use middleware::magick::check_magick;
+use sentry::{Breadcrumb, Hub, SentryFutureExt, TransactionContext};
 use tracing::{error, info};
 
 use crate::middleware::{
@@ -57,20 +58,35 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     tokio::spawn(async move {
         tokio::signal::ctrl_c().await.unwrap();
+        sentry::add_breadcrumb(Breadcrumb {
+            message: Some("Shutting Down".to_owned()),
+
+            ..Default::default()
+        });
         info!("Shutting down.");
         st1.store(true, Ordering::Relaxed);
     });
 
+    let db_conn = database.connect()?;
     loop {
-        let db_conn = database.connect()?;
         let start = Instant::now();
         if should_stop.load(Ordering::Relaxed) {
             break;
         }
+        let tx = sentry::start_transaction(TransactionContext::new(
+            "main-task",
+            "runner",
+        ));
 
         let runner = runner(&db_conn, should_stop.clone());
-        if let Err(why) = runner.await {
+        if let Err(why) = runner.bind_hub(Hub::current()).await {
+            sentry::capture_error(&why);
+            tx.set_status(sentry::protocol::SpanStatus::InternalError);
+            tx.finish();
             error!("{why:#?}");
+        } else {
+            tx.set_status(sentry::protocol::SpanStatus::Ok);
+            tx.finish();
         }
 
         let runner_time = Instant::now() - start;
