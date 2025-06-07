@@ -29,17 +29,8 @@ use std::{
 use tracing::info;
 
 const F1_DOCS_URL: &str = "https://www.fia.com/documents/championships/fia-formula-one-world-championship-14/season/season-2025-2071";
-<<<<<<< HEAD
-<<<<<<< HEAD
 const F2_DOCS_URL: &str =
     "https://www.fia.com/documents/season/season-2025-2071/championships/formula-2-championship-44";
-=======
-const F2_DOCS_URL: &str = "https://www.fia.com/documents/season/season-2025-2071/championships/formula-2-championship-44";
->>>>>>> 0e5c14c (add sentry integration)
-=======
-const F2_DOCS_URL: &str =
-    "https://www.fia.com/documents/season/season-2025-2071/championships/formula-2-championship-44";
->>>>>>> 4ce6936 (ran cargo fmt)
 const F3_DOCS_URL: &str = "https://www.fia.com/documents/season/season-2025-2071/championships/fia-formula-3-championship-1012";
 
 struct LocalCache {
@@ -97,18 +88,7 @@ async fn populate_cache(
     Ok(())
 }
 
-<<<<<<< HEAD
-<<<<<<< HEAD
 pub async fn runner(db_conn: &Connection, should_stop: Arc<AtomicBool>) -> crate::error::Result {
-=======
-pub async fn runner(
-    db_conn: &Connection,
-    should_stop: Arc<AtomicBool>,
-) -> crate::error::Result {
->>>>>>> 0e5c14c (add sentry integration)
-=======
-pub async fn runner(db_conn: &Connection, should_stop: Arc<AtomicBool>) -> crate::error::Result {
->>>>>>> 4ce6936 (ran cargo fmt)
     let mut local_cache = LocalCache::default();
 
     tokio::task::yield_now().await;
@@ -136,10 +116,7 @@ pub async fn runner(db_conn: &Connection, should_stop: Arc<AtomicBool>) -> crate
             &mut local_cache,
             should_stop.clone(),
         )
-<<<<<<< HEAD
-=======
         .bind_hub(Hub::current())
->>>>>>> 0e5c14c (add sentry integration)
         .await?;
     }
 
@@ -230,11 +207,8 @@ async fn runner_internal(
     should_stop: Arc<AtomicBool>,
 ) -> crate::error::Result {
     let season = get_season(url, year).await?;
-<<<<<<< HEAD
 
-=======
     sentry::configure_scope(|f| f.set_tag("Year", season.year));
->>>>>>> 0e5c14c (add sentry integration)
     for ev in season.events.into_iter() {
         if should_stop.load(Ordering::Relaxed) {
             break;
@@ -258,9 +232,6 @@ async fn runner_internal(
             if should_stop.load(Ordering::Relaxed) {
                 break;
             }
-<<<<<<< HEAD
-            let (title, url) = (doc.title.take().unwrap(), doc.url.take().unwrap());
-=======
 
             let tx =
                 sentry::start_transaction(TransactionContext::new("document-parsing", "parser"));
@@ -268,23 +239,10 @@ async fn runner_internal(
             sentry::configure_scope(|f| {
                 f.set_tag("Document", &title);
             });
->>>>>>> 0e5c14c (add sentry integration)
             if cache.documents.iter().any(|f| f.href == url) {
                 continue;
             }
 
-<<<<<<< HEAD
-            let (file, body) = download_file(&url, &format!("doc_{i}")).await?;
-            let mirror = upload_mirror(&title, &real_event.title, year, &body).await?;
-            let inserted_doc_id =
-                insert_document(db_conn, real_event.id as i64, title.clone(), &url, &mirror)
-                    .await?;
-
-            cache.documents.push(Document {
-                id: inserted_doc_id,
-                event_id: real_event.id as i64,
-                title,
-=======
             let (file, body) = download_file(&url, &format!("doc_{i}"))
                 .bind_hub(Hub::current())
                 .await?;
@@ -299,27 +257,15 @@ async fn runner_internal(
                 title,
                 id: inserted_doc_id,
                 event_id: real_event.id as i64,
->>>>>>> 0e5c14c (add sentry integration)
                 href: url,
                 mirror,
                 status: f1_bot_types::DocumentStatus::Initial,
                 created_at: Utc::now(),
             });
-<<<<<<< HEAD
-<<<<<<< HEAD
-
-            let files = run_magick(file.to_string_lossy(), &format!("doc_{i}")).await?;
-=======
-            
-            let files =
-                run_magick(file.to_string_lossy(), &format!("doc_{i}")).bind_hub(Hub::current()).await?;
->>>>>>> 0e5c14c (add sentry integration)
-=======
 
             let files = run_magick(file.to_string_lossy(), &format!("doc_{i}"))
                 .bind_hub(Hub::current())
                 .await?;
->>>>>>> 4ce6936 (ran cargo fmt)
 
             // run_magick takes some time to complete, hence we yield here!
             tokio::task::yield_now().await;
