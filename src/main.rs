@@ -9,8 +9,8 @@ use std::{
 
 use middleware::magick::check_magick;
 use sentry::{Breadcrumb, Hub, SentryFutureExt, TransactionContext};
-use tracing::{error, info};
-use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
+use tracing::{Level, error, info, level_filters::LevelFilter};
+use tracing_subscriber::{Layer, layer::SubscriberExt, util::SubscriberInitExt};
 
 use crate::middleware::{
     magick::{clear_tmp_dir, create_tmp_dir},
@@ -35,7 +35,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     tracing_subscriber::registry()
         .with(sentry::integrations::tracing::layer())
-        .with(tracing_subscriber::fmt::layer())
+        .with(tracing_subscriber::fmt::layer().with_filter(LevelFilter::from_level(Level::INFO)))
         .init();
 
     if !check_magick() {
