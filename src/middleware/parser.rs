@@ -55,13 +55,8 @@ impl<'a> HTMLParser<'a> {
     }
 }
 
-fn get_attr(tag: &Tag, name: &str) -> Option<Attribute> {
-    let attr = tag
-        .attrs
-        .iter()
-        .find(|f| f.name.local.as_ref() == name)
-        .cloned();
-    attr
+fn attr_ref<'a>(tag: &'a Tag, name: &str) -> Option<&'a Attribute> {
+    tag.attrs.iter().find(|f| f.name.local.as_ref() == name)
 }
 
 impl TokenSink for HTMLParser<'_> {
@@ -75,7 +70,7 @@ impl TokenSink for HTMLParser<'_> {
         match token {
             Token::TagToken(tag_token) => {
                 let name = tag_token.name.as_ref();
-                let class = get_attr(&tag_token, "class");
+                let class = attr_ref(&tag_token, "class");
                 match (tag_token.kind, name) {
                     (StartTag, "ul") => {
                         if class.unwrap().value.as_ref() == "event-wrapper" {
@@ -89,8 +84,8 @@ impl TokenSink for HTMLParser<'_> {
                                 return TokenSinkResult::Continue;
                             }
                         }
-                        if let Some(href) = get_attr(&tag_token, "href").as_ref() {
-                            let href = href.value.as_ref();
+                        if let Some(href) = attr_ref(&tag_token, "href") {
+                            let href = &href.value;
                             *document = Some(ParserDocument {
                                 url: Some(format!(
                                     "{}{}",
