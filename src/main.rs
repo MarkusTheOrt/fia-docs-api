@@ -77,10 +77,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
         if should_stop.load(Ordering::Relaxed) {
             break;
         }
-        let tx = sentry::start_transaction(TransactionContext::new(
-            "main-task",
-            "runner",
-        ));
+        let tx = sentry::start_transaction(TransactionContext::new("main-task", "runner"));
 
         let runner = runner(&db_conn, should_stop.clone());
         if let Err(why) = runner.bind_hub(Hub::current()).await {

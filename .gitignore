@@ -1,5 +1,6 @@
 /target
 .env
+.db.env
 /tmp
 *.pem
 *.base64

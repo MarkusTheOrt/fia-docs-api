@@ -30,11 +30,16 @@ use tracing::info;
 
 const F1_DOCS_URL: &str = "https://www.fia.com/documents/championships/fia-formula-one-world-championship-14/season/season-2025-2071";
 <<<<<<< HEAD
+<<<<<<< HEAD
 const F2_DOCS_URL: &str =
     "https://www.fia.com/documents/season/season-2025-2071/championships/formula-2-championship-44";
 =======
 const F2_DOCS_URL: &str = "https://www.fia.com/documents/season/season-2025-2071/championships/formula-2-championship-44";
 >>>>>>> 0e5c14c (add sentry integration)
+=======
+const F2_DOCS_URL: &str =
+    "https://www.fia.com/documents/season/season-2025-2071/championships/formula-2-championship-44";
+>>>>>>> 4ce6936 (ran cargo fmt)
 const F3_DOCS_URL: &str = "https://www.fia.com/documents/season/season-2025-2071/championships/fia-formula-3-championship-1012";
 
 struct LocalCache {
@@ -93,6 +98,7 @@ async fn populate_cache(
 }
 
 <<<<<<< HEAD
+<<<<<<< HEAD
 pub async fn runner(db_conn: &Connection, should_stop: Arc<AtomicBool>) -> crate::error::Result {
 =======
 pub async fn runner(
@@ -100,6 +106,9 @@ pub async fn runner(
     should_stop: Arc<AtomicBool>,
 ) -> crate::error::Result {
 >>>>>>> 0e5c14c (add sentry integration)
+=======
+pub async fn runner(db_conn: &Connection, should_stop: Arc<AtomicBool>) -> crate::error::Result {
+>>>>>>> 4ce6936 (ran cargo fmt)
     let mut local_cache = LocalCache::default();
 
     tokio::task::yield_now().await;
@@ -246,7 +255,6 @@ async fn runner_internal(
         };
 
         for (i, mut doc) in ev.documents.into_iter().enumerate() {
-            
             if should_stop.load(Ordering::Relaxed) {
                 break;
             }
@@ -254,9 +262,9 @@ async fn runner_internal(
             let (title, url) = (doc.title.take().unwrap(), doc.url.take().unwrap());
 =======
 
-            let tx = sentry::start_transaction(TransactionContext::new("document-parsing", "parser"));
-            let (title, url) =
-                (doc.title.take().unwrap(), doc.url.take().unwrap());
+            let tx =
+                sentry::start_transaction(TransactionContext::new("document-parsing", "parser"));
+            let (title, url) = (doc.title.take().unwrap(), doc.url.take().unwrap());
             sentry::configure_scope(|f| {
                 f.set_tag("Document", &title);
             });
@@ -283,14 +291,9 @@ async fn runner_internal(
             let mirror = upload_mirror(&title, &real_event.title, year, &body)
                 .bind_hub(Hub::current())
                 .await?;
-            let inserted_doc_id = insert_document(
-                db_conn,
-                real_event.id as i64,
-                title.clone(),
-                &url,
-                &mirror,
-            )
-            .await?;
+            let inserted_doc_id =
+                insert_document(db_conn, real_event.id as i64, title.clone(), &url, &mirror)
+                    .await?;
 
             cache.documents.push(Document {
                 title,
@@ -303,6 +306,7 @@ async fn runner_internal(
                 created_at: Utc::now(),
             });
 <<<<<<< HEAD
+<<<<<<< HEAD
 
             let files = run_magick(file.to_string_lossy(), &format!("doc_{i}")).await?;
 =======
@@ -310,6 +314,12 @@ async fn runner_internal(
             let files =
                 run_magick(file.to_string_lossy(), &format!("doc_{i}")).bind_hub(Hub::current()).await?;
 >>>>>>> 0e5c14c (add sentry integration)
+=======
+
+            let files = run_magick(file.to_string_lossy(), &format!("doc_{i}"))
+                .bind_hub(Hub::current())
+                .await?;
+>>>>>>> 4ce6936 (ran cargo fmt)
 
             // run_magick takes some time to complete, hence we yield here!
             tokio::task::yield_now().await;
