@@ -17,7 +17,7 @@ enum ParserState {
     Next,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, serde::Serialize)]
 pub struct ParserDocument {
     pub title: Option<String>,
     pub url: Option<String>,
@@ -30,7 +30,7 @@ pub struct Season {
     pub events: Vec<ParserEvent>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, serde::Serialize)]
 pub struct ParserEvent {
     pub title: Option<String>,
     pub season: Option<i32>,
