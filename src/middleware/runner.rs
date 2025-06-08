@@ -140,9 +140,15 @@ async fn create_new_event(
     series: Series,
     year: i32,
     event: &ParserEvent,
+    span: &sentry::Span,
 ) -> crate::error::Result<Event> {
     info!("Running 1");
     let event_title = event.title.as_ref().cloned().unwrap();
+
+    let s = span.start_child(
+        "db.sql.query",
+        "INSERT INTO events (title, year, series, status) VALUES (?, ?, ?, ?)",
+    );
     db_conn
         .execute(
             "INSERT INTO events (title, year, series, status) VALUES (?, ?, ?, ?)",
@@ -150,6 +156,9 @@ async fn create_new_event(
         )
         .await?;
     info!("inserted event \"{event_title}\"");
+    s.set_data("event", event.title.clone().into());
+    s.set_status(SpanStatus::Ok);
+    s.finish();
     Ok(Event {
         id: db_conn.last_insert_rowid() as u64,
         title: event_title,
@@ -248,7 +257,7 @@ async fn runner_internal(
             }
             None => {
                 c.set_data("cache.hit", serde_json::Value::Bool(false));
-                &create_new_event(db_conn, series, year, &ev).await?
+                &create_new_event(db_conn, series, year, &ev, &c).await?
             }
         };
         c.set_data("event", serde_json::to_value(real_event).unwrap());
@@ -277,7 +286,12 @@ async fn runner_internal(
             c.set_status(SpanStatus::Ok);
             c.finish();
 
-            let (file, body) = download_file(&url, &format!("doc_{i}")).await?;
+            let (file, body) = download_file(
+                &url,
+                &format!("doc_{i}"),
+                &tx.start_child("http.client", &format!("GET {url}")),
+            )
+            .await?;
             let mirror = upload_mirror(&title, &real_event.title, year, &body).await?;
             let inserted_doc_id =
                 insert_document(db_conn, real_event.id as i64, title.clone(), &url, &mirror)
@@ -410,10 +424,20 @@ async fn upload_mirror(
     Ok(url)
 }
 
-async fn download_file(url: &str, name: &str) -> crate::error::Result<(PathBuf, Vec<u8>)> {
+async fn download_file(
+    url: &str,
+    name: &str,
+    span: &sentry::Span,
+) -> crate::error::Result<(PathBuf, Vec<u8>)> {
+    let span = span.start_child("http.client", &format!("GET {url}"));
+    span.set_data("document_name", name.into());
     let request = reqwest::get(url).await?;
+    span.set_tag("http.status_code", request.status().as_u16());
     let mut file = File::create(format!("./tmp/{name}.pdf"))?;
     let body = request.bytes().await?;
+    span.set_tag("http.content_length", body.len());
+    span.set_status(SpanStatus::Ok);
+    span.finish();
     file.set_len(body.len() as u64)?;
     file.write_all(&body)?;
     let path = PathBuf::from_str(&format!("./tmp/{name}.pdf"))?;
