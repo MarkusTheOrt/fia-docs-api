@@ -26,7 +26,7 @@ use std::{
     io::{Read, Write},
     time::UNIX_EPOCH,
 };
-use tracing::{info, instrument};
+use tracing::info;
 
 const F1_DOCS_URL: &str = "https://www.fia.com/documents/championships/fia-formula-one-world-championship-14/season/season-2025-2071";
 const F2_DOCS_URL: &str =
@@ -178,7 +178,6 @@ async fn insert_document(
     Ok(db_conn.last_insert_rowid())
 }
 
-#[instrument]
 async fn upload_image(data: Vec<u8>, url: &String) -> crate::error::Result<()> {
     let data_digest = sha256::digest(data.as_slice());
     let now = Utc::now();
@@ -303,10 +302,6 @@ async fn runner_internal(
             tokio::task::yield_now().await;
 
             for (page_number, path) in files.iter().enumerate() {
-                let pg = doc_span.start_child("upload", "Upload Image");
-                let mut file = File::open(path)?;
-                let mut buf = Vec::with_capacity(1024 * 1024 * 10);
-                file.read_to_end(&mut buf)?;
                 let url = format!(
                     "https://fia.ort.dev/img/{}/{}/{}-{}.jpg",
                     year,
@@ -314,13 +309,18 @@ async fn runner_internal(
                     inserted_doc_id,
                     page_number
                 );
+                let pg = doc_span.start_child("http.client", &format!("PUT {url}"));
                 pg.set_request(sentry::protocol::Request {
                     url: Some(url.clone().parse().unwrap()),
                     method: Some("PUT".to_owned()),
                     ..Default::default()
                 });
+                let mut file = File::open(path)?;
+                let mut buf = Vec::with_capacity(1024 * 1024 * 10);
+                file.read_to_end(&mut buf)?;
 
                 upload_image(buf, &url).await?;
+                pg.set_tag("http.status_code", 200);
 
                 insert_image(db_conn, inserted_doc_id, page_number, url).await?;
                 pg.finish();
