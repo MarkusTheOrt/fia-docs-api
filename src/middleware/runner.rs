@@ -50,7 +50,6 @@ impl Default for LocalCache {
     }
 }
 
-#[instrument]
 async fn populate_cache(
     db_conn: &Connection,
     cache: &mut LocalCache,
@@ -59,23 +58,29 @@ async fn populate_cache(
     cache.events.clear();
     cache.documents.clear();
 
-    sentry::add_breadcrumb(Breadcrumb {
-        message: Some("Populating Cache".to_owned()),
-        ..Default::default()
-    });
+    let tx = sentry::start_transaction(TransactionContext::new("Populate Cache Data", "cache.set"));
 
+    let db = tx.start_child("db.sql.query", "SELECT * FROM events WHERE year = ?");
     let mut events = db_conn
         .query("SELECT * FROM events WHERE year = ?", params![year])
         .await?;
     while let Ok(Some(event)) = events.next().await {
         cache.events.push(libsql::de::from_row(&event)?);
     }
+    db.set_tag("db.rows_returned", cache.events.len());
+    db.set_status(SpanStatus::Ok);
+    db.finish();
 
     let delta = Utc::now() - cache.last_populated;
     // lets revalidate the cache once a day.
     if delta.num_days() < 1 {
         return Ok(());
     }
+
+    let db = tx.start_child(
+        "db.sql.query",
+        "SELECT * FROM documents WHERE strftime('%Y', created_at) = ?",
+    );
     let mut docs = db_conn
         .query(
             "SELECT * FROM documents WHERE strftime('%Y', created_at) = ?",
@@ -85,8 +90,14 @@ async fn populate_cache(
     while let Ok(Some(doc)) = docs.next().await {
         cache.documents.push(libsql::de::from_row(&doc)?);
     }
+    db.set_tag("db.rows_returned", cache.documents.len());
+    db.set_status(SpanStatus::Ok);
+    db.finish();
 
     cache.last_populated = Utc::now();
+    tx.set_tag("cache.backend", "memory");
+    tx.set_status(SpanStatus::Ok);
+    tx.finish();
     Ok(())
 }
 
@@ -221,15 +232,25 @@ async fn runner_internal(
             f.set_tag("Event", serde_json::to_value(&ev).unwrap());
         });
 
-        let c = tx.start_child("cache", "find-cached-event");
+        let c = tx.start_child("cache.get", "find-cached-event");
+        c.set_tag("cache.backend", "memory");
+        if let Some(title) = ev.title.as_ref() {
+            c.set_data("cache.key", serde_json::Value::String(title.to_string()));
+        }
         let cache_event = cache.events.iter().find(|f| {
             ev.title.as_ref().is_some_and(|t| *t == f.title)
                 && ev.season.is_some_and(|s| s == year)
                 && f.series == series
         });
         let real_event = match cache_event {
-            Some(db_event) => db_event.to_owned(),
-            None => &create_new_event(db_conn, series, year, &ev).await?,
+            Some(db_event) => {
+                c.set_data("cache.hit", serde_json::Value::Bool(true));
+                db_event.to_owned()
+            }
+            None => {
+                c.set_data("cache.hit", serde_json::Value::Bool(false));
+                &create_new_event(db_conn, series, year, &ev).await?
+            }
         };
         c.set_data("event", serde_json::to_value(real_event).unwrap());
         c.set_status(SpanStatus::Ok);
@@ -244,9 +265,18 @@ async fn runner_internal(
             sentry::configure_scope(|f| {
                 f.set_tag("Document", &title);
             });
+
+            let c = tx.start_child("cache.get", "Check if Document is Cached");
+            c.set_data("cache.key", serde_json::Value::String(url.clone()));
             if cache.documents.iter().any(|f| f.href == url) {
+                c.set_data("cache.hit", serde_json::Value::Bool(true));
+                c.set_status(SpanStatus::Ok);
+                c.finish();
                 continue;
             }
+            c.set_data("cache.hit", serde_json::Value::Bool(false));
+            c.set_status(SpanStatus::Ok);
+            c.finish();
 
             let (file, body) = download_file(&url, &format!("doc_{i}")).await?;
             let mirror = upload_mirror(&title, &real_event.title, year, &body).await?;
@@ -286,7 +316,7 @@ async fn runner_internal(
                 );
                 pg.set_request(sentry::protocol::Request {
                     url: Some(url.clone().parse().unwrap()),
-                    method: Some("POST".to_owned()),
+                    method: Some("PUT".to_owned()),
                     ..Default::default()
                 });
 
@@ -394,7 +424,7 @@ async fn download_file(url: &str, name: &str) -> crate::error::Result<(PathBuf, 
 
 async fn get_season(url: &str, year: i32) -> crate::error::Result<super::parser::Season> {
     let tx = sentry::start_transaction(TransactionContext::new("fetch.docs", "docs-fetch"));
-    let c = tx.start_child("docs.http", "fetch-website");
+    let c = tx.start_child("http.client", &format!("GET {url}"));
     c.set_request(sentry::protocol::Request {
         url: Some(url.parse().unwrap()),
         method: Some("GET".to_owned()),
@@ -402,6 +432,8 @@ async fn get_season(url: &str, year: i32) -> crate::error::Result<super::parser:
     });
     let request = reqwest::get(url).await?;
     let bytes = request.bytes().await?;
+    c.set_tag("http.status_code", 200);
+    c.set_status(SpanStatus::Ok);
     c.finish();
     let c = tx.start_child("docs.read", "into-tendril");
     let mut tendril = ByteTendril::new();
