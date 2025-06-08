@@ -11,7 +11,7 @@ use html5ever::{
 };
 use libsql::{Connection, params};
 use reqwest::header::{AUTHORIZATION, CONTENT_TYPE};
-use sentry::{Breadcrumb, Hub, SentryFutureExt, TransactionContext};
+use sentry::{Breadcrumb, Hub, SentryFutureExt, TransactionContext, protocol::SpanStatus};
 use std::{
     cell::RefCell,
     fs::File,
@@ -221,8 +221,10 @@ async fn runner_internal(
 
         let tx = sentry::start_transaction(TransactionContext::new("event-parsing", "parser"));
         sentry::configure_scope(|f| {
-            f.set_tag("Event", ev.title.as_ref().cloned().unwrap_or_default());
+            f.set_tag("Event", serde_json::to_value(&ev).unwrap());
         });
+
+        let c = tx.start_child("cache", "find-cached-event");
         let cache_event = cache.events.iter().find(|f| {
             ev.title.as_ref().is_some_and(|t| *t == f.title)
                 && ev.season.is_some_and(|s| s == year)
@@ -232,14 +234,15 @@ async fn runner_internal(
             Some(db_event) => db_event.to_owned(),
             None => &create_new_event(db_conn, series, year, &ev).await?,
         };
+        c.set_data("event", serde_json::to_value(real_event).unwrap());
+        c.set_status(SpanStatus::Ok);
+        c.finish();
 
         for (i, mut doc) in ev.documents.into_iter().enumerate() {
             if should_stop.load(Ordering::Relaxed) {
                 break;
             }
-
-            let tx =
-                sentry::start_transaction(TransactionContext::new("document-parsing", "parser"));
+            let doc_span = tx.start_child("parse", "Parse Documents");
             let (title, url) = (doc.title.take().unwrap(), doc.url.take().unwrap());
             sentry::configure_scope(|f| {
                 f.set_tag("Document", &title);
@@ -268,14 +271,18 @@ async fn runner_internal(
                 created_at: Utc::now(),
             });
 
+            let mgs = doc_span.start_child("magick", "Screenshot the Document");
             let files = run_magick(file.to_string_lossy(), &format!("doc_{i}"))
                 .bind_hub(Hub::current())
                 .await?;
+            mgs.set_status(SpanStatus::Ok);
+            mgs.finish();
 
             // run_magick takes some time to complete, hence we yield here!
             tokio::task::yield_now().await;
 
             for (page_number, path) in files.iter().enumerate() {
+                let pg = doc_span.start_child("upload", "Upload Image");
                 let mut file = File::open(path)?;
                 let mut buf = Vec::with_capacity(1024 * 1024 * 10);
                 file.read_to_end(&mut buf)?;
@@ -286,14 +293,20 @@ async fn runner_internal(
                     inserted_doc_id,
                     page_number
                 );
+                pg.set_request(sentry::protocol::Request {
+                    url: Some(url.clone().parse().unwrap()),
+                    method: Some("POST".to_owned()),
+                    ..Default::default()
+                });
 
                 upload_image(buf, &url).await?;
 
                 insert_image(db_conn, inserted_doc_id, page_number, url).await?;
+                pg.finish();
             }
             mark_doc_done(inserted_doc_id, db_conn).await?;
-            tx.set_status(sentry::protocol::SpanStatus::Ok);
-            tx.finish();
+            doc_span.set_status(SpanStatus::Ok);
+            doc_span.finish();
         }
         tx.set_status(sentry::protocol::SpanStatus::Ok);
         tx.finish();
