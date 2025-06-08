@@ -11,7 +11,7 @@ use html5ever::{
 };
 use libsql::{Connection, params};
 use reqwest::header::{AUTHORIZATION, CONTENT_TYPE};
-use sentry::{Breadcrumb, Hub, SentryFutureExt, TransactionContext, protocol::SpanStatus};
+use sentry::{Breadcrumb, TransactionContext, protocol::SpanStatus};
 use std::{
     cell::RefCell,
     fs::File,
@@ -90,7 +90,6 @@ async fn populate_cache(
     Ok(())
 }
 
-#[instrument]
 pub async fn runner(db_conn: &Connection, should_stop: Arc<AtomicBool>) -> crate::error::Result {
     let mut local_cache = LocalCache::default();
 
@@ -119,7 +118,6 @@ pub async fn runner(db_conn: &Connection, should_stop: Arc<AtomicBool>) -> crate
             &mut local_cache,
             should_stop.clone(),
         )
-        .bind_hub(Hub::current())
         .await?;
     }
 
@@ -202,7 +200,6 @@ async fn upload_image(data: Vec<u8>, url: &String) -> crate::error::Result<()> {
     Ok(())
 }
 
-#[instrument]
 async fn runner_internal(
     db_conn: &Connection,
     year: i32,
@@ -251,12 +248,8 @@ async fn runner_internal(
                 continue;
             }
 
-            let (file, body) = download_file(&url, &format!("doc_{i}"))
-                .bind_hub(Hub::current())
-                .await?;
-            let mirror = upload_mirror(&title, &real_event.title, year, &body)
-                .bind_hub(Hub::current())
-                .await?;
+            let (file, body) = download_file(&url, &format!("doc_{i}")).await?;
+            let mirror = upload_mirror(&title, &real_event.title, year, &body).await?;
             let inserted_doc_id =
                 insert_document(db_conn, real_event.id as i64, title.clone(), &url, &mirror)
                     .await?;
@@ -272,9 +265,7 @@ async fn runner_internal(
             });
 
             let mgs = doc_span.start_child("magick", "Screenshot the Document");
-            let files = run_magick(file.to_string_lossy(), &format!("doc_{i}"))
-                .bind_hub(Hub::current())
-                .await?;
+            let files = run_magick(file.to_string_lossy(), &format!("doc_{i}")).await?;
             mgs.set_status(SpanStatus::Ok);
             mgs.finish();
 
@@ -402,12 +393,23 @@ async fn download_file(url: &str, name: &str) -> crate::error::Result<(PathBuf, 
 }
 
 async fn get_season(url: &str, year: i32) -> crate::error::Result<super::parser::Season> {
+    let tx = sentry::start_transaction(TransactionContext::new("fetch.docs", "docs-fetch"));
+    let c = tx.start_child("docs.http", "fetch-website");
+    c.set_request(sentry::protocol::Request {
+        url: Some(url.parse().unwrap()),
+        method: Some("GET".to_owned()),
+        ..Default::default()
+    });
     let request = reqwest::get(url).await?;
     let bytes = request.bytes().await?;
+    c.finish();
+    let c = tx.start_child("docs.read", "into-tendril");
     let mut tendril = ByteTendril::new();
     bytes.as_bytes().read_to_tendril(&mut tendril)?;
     let input = BufferQueue::default();
     input.push_back(tendril.try_reinterpret().unwrap());
+    c.finish();
+    let c = tx.start_child("docs.parse", "parse-documents");
     let parser_season = RefCell::new(super::parser::Season {
         year,
         events: vec![],
@@ -419,5 +421,8 @@ async fn get_season(url: &str, year: i32) -> crate::error::Result<super::parser:
         let _ = tok.feed(&input);
         tok.end();
     }
+    c.finish();
+    tx.set_status(SpanStatus::Ok);
+    tx.finish();
     Ok(parser_season.into_inner())
 }

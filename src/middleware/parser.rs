@@ -34,6 +34,7 @@ pub struct Season {
 pub struct ParserEvent {
     pub title: Option<String>,
     pub season: Option<i32>,
+    #[serde(skip)]
     pub documents: Vec<ParserDocument>,
 }
 

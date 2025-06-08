@@ -57,7 +57,7 @@ impl std::fmt::Debug for Error {
             Self::Io(err) => write!(f, "{err}"),
             Self::Magick(err) => write!(f, "{err}"),
             Self::Threading(err) => write!(f, "{err}"),
-            Self::Infallible => Ok(()),
+            Self::Infallible => write!(f, "INFALLIBLE Error Occured"),
         }
     }
 }
@@ -71,7 +71,7 @@ impl std::fmt::Display for Error {
             Self::Io(err) => write!(f, "{err}"),
             Self::Magick(err) => write!(f, "{err}"),
             Self::Threading(err) => write!(f, "{err}"),
-            Self::Infallible => Ok(()),
+            Self::Infallible => write!(f, "INFALLIBLE Error Occured"),
         }
     }
 }
