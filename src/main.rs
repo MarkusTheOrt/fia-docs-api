@@ -8,7 +8,7 @@ use std::{
 };
 
 use middleware::magick::check_magick;
-use sentry::{Breadcrumb, Hub, SentryFutureExt, TransactionContext};
+use sentry::Breadcrumb;
 use tracing::{Level, error, info, level_filters::LevelFilter};
 use tracing_subscriber::{Layer, layer::SubscriberExt, util::SubscriberInitExt};
 
@@ -24,19 +24,20 @@ mod middleware;
 async fn main() -> Result<(), Box<dyn Error>> {
     drop(dotenvy::dotenv());
 
+    tracing_subscriber::registry()
+        //       .with(sentry::integrations::tracing::layer())
+        .with(tracing_subscriber::fmt::layer().with_filter(LevelFilter::from_level(Level::INFO)))
+        .init();
+
     let _guard = sentry::init((
         std::env::var("SENTRY_DSN")?,
         sentry::ClientOptions {
             release: sentry::release_name!(),
             sample_rate: 1.0,
+            traces_sample_rate: 1.0,
             ..Default::default()
         },
     ));
-
-    tracing_subscriber::registry()
-        .with(sentry::integrations::tracing::layer())
-        .with(tracing_subscriber::fmt::layer().with_filter(LevelFilter::from_level(Level::INFO)))
-        .init();
 
     if !check_magick() {
         error!("Couldn't find imagemagick! exiting...");
@@ -71,23 +72,19 @@ async fn main() -> Result<(), Box<dyn Error>> {
         st1.store(true, Ordering::Relaxed);
     });
 
+    sentry::start_session();
+
     let db_conn = database.connect()?;
     loop {
         let start = Instant::now();
         if should_stop.load(Ordering::Relaxed) {
             break;
         }
-        let tx = sentry::start_transaction(TransactionContext::new("main-task", "runner"));
 
         let runner = runner(&db_conn, should_stop.clone());
-        if let Err(why) = runner.bind_hub(Hub::current()).await {
+        if let Err(why) = runner.await {
             sentry::capture_error(&why);
-            tx.set_status(sentry::protocol::SpanStatus::InternalError);
-            tx.finish();
             error!("{why:#?}");
-        } else {
-            tx.set_status(sentry::protocol::SpanStatus::Ok);
-            tx.finish();
         }
 
         let runner_time = Instant::now() - start;
@@ -99,6 +96,10 @@ async fn main() -> Result<(), Box<dyn Error>> {
         )
         .await;
     }
+
+    sentry::end_session();
+
+    _guard.flush(None);
 
     Ok(())
 }
