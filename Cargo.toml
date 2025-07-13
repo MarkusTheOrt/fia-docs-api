@@ -8,10 +8,6 @@ default-run = "fia-docs-api"
 name = "docker-build"
 path = "tools/docker-build.rs"
 
-[[bin]]
-name = "docker-push"
-path = "tools/docker-push.rs"
-
 [dependencies]
 aws-sign-v4 = { git = "https://github.com/MarkusTheOrt/aws-sign-v4", version = "0.3.0" }
 chrono = { version = "0.4.41", features = ["serde"] }

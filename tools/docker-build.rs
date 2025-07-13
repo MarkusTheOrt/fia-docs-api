@@ -32,7 +32,7 @@ pub fn main() {
         .args([
             "tag",
             env!("CARGO_PKG_NAME"),
-            &format!("ghcr.io/{}:{}", repo, env!("CARGO_PKG_VERSION")),
+            &format!("ghcr.io/{repo}:{}", env!("CARGO_PKG_VERSION")),
         ])
         .status()
         .expect("Failed to run Docker tag")
@@ -46,7 +46,7 @@ pub fn main() {
         .args([
             "tag",
             env!("CARGO_PKG_NAME"),
-            &format!("ghcr.io/{}:latest", repo),
+            &format!("ghcr.io/{repo}:latest"),
         ])
         .status()
         .expect("Failed to run Docker tag")
@@ -59,7 +59,7 @@ pub fn main() {
     if !Command::new("docker")
         .args([
             "push",
-            &format!("ghcr.io/{}:{}", repo, env!("CARGO_PKG_VERSION")),
+            &format!("ghcr.io/{repo}:{}", env!("CARGO_PKG_VERSION")),
         ])
         .status()
         .expect("Failed to run Docker tag")
@@ -70,7 +70,7 @@ pub fn main() {
     }
 
     if !Command::new("docker")
-        .args(["push", &format!("ghcr.io/{}:latest", repo)])
+        .args(["push", &format!("ghcr.io/{repo}:latest")])
         .status()
         .expect("Failed to run Docker tag")
         .success()
