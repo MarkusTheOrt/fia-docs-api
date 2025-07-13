@@ -74,8 +74,8 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     sentry::start_session();
 
-    let db_conn = database.connect()?;
     loop {
+        let db_conn = database.connect()?;
         let start = Instant::now();
         if should_stop.load(Ordering::Relaxed) {
             break;
